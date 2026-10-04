@@ -1,26 +1,180 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-sidebar: #0b1727;
+  --color-sidebar-hover: #132540;
+  --color-sidebar-active: #0e7490;
+  --color-sidebar-border: #1c2f47;
+
+  --color-surface-page: #eef1f6;
+  --color-surface-card: #ffffff;
+  --color-surface-border: #e3e8f0;
+
+  --color-brand-teal: #0d9488;
+  --color-brand-cyan: #0e7490;
+
+  --color-status-red: #dc2626;
+  --color-status-red-bg: #fef2f2;
+  --color-status-orange: #ea580c;
+  --color-status-orange-bg: #fff7ed;
+  --color-status-amber: #d97706;
+  --color-status-amber-bg: #fffbeb;
+  --color-status-green: #16a34a;
+  --color-status-green-bg: #f0fdf4;
+  --color-status-blue: #2563eb;
+  --color-status-blue-bg: #eff6ff;
+
+  --shadow-card: 0 1px 2px 0 rgba(16, 24, 40, 0.04), 0 1px 3px 0 rgba(16, 24, 40, 0.06);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-surface-page);
+  color: #0f172a;
+  font-feature-settings: "cv11", "ss01";
 }
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Dark mode                                                               */
+/* Toggled by adding "dark" to <html> (see lib/settings.tsx). The app's    */
+/* components are written with Tailwind's literal utility classes         */
+/* (bg-white, text-slate-500, ...) rather than semantic tokens, so instead */
+/* of re-theming every component, the classes actually in use across the  */
+/* app are re-painted here for a real dark theme with legible contrast.   */
+/* ---------------------------------------------------------------------- */
+
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a475e;
+}
+
+.dark .shadow-card {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.35), 0 1px 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Surfaces */
+.dark .bg-white { background-color: #131f33; }
+.dark .bg-surface-page { background-color: #0b1220; }
+.dark .bg-slate-50 { background-color: #16213a; }
+.dark .bg-slate-100 { background-color: #1c2942; }
+.dark .bg-slate-200 { background-color: #263454; }
+.dark .bg-slate-700 { background-color: #334155; }
+.dark .bg-slate-800 { background-color: #26324a; }
+.dark .bg-slate-900 { background-color: #0f172a; }
+.dark .bg-slate-950 { background-color: #050810; }
+.dark .bg-slate-300 { background-color: #475569; }
+.dark .bg-slate-400 { background-color: #64748b; }
+
+/* Borders */
+.dark .border-surface-border { border-color: #29314a; }
+.dark .bg-surface-border { background-color: #29314a; }
+.dark .border-slate-800 { border-color: #3a475e; }
+.dark .border-slate-300 { border-color: #3a475e; }
+.dark .border-red-100, .dark .border-red-200 { border-color: #5b2230; }
+.dark .border-amber-200 { border-color: #5c4520; }
+.dark .border-green-100, .dark .border-green-200 { border-color: #1f4a35; }
+.dark .border-blue-100, .dark .border-blue-200 { border-color: #21406b; }
+.dark .border-teal-200 { border-color: #164e46; }
+.dark .border-status-red-bg { border-color: #5b2230; }
+.dark .border-status-green-bg { border-color: #1f4a35; }
+.dark .border-status-amber-bg { border-color: #5c4520; }
+
+/* Text */
+.dark .text-slate-900 { color: #f8fafc; }
+.dark .text-slate-800 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #b6c2d1; }
+.dark .text-slate-500 { color: #97a6bc; }
+.dark .text-slate-400 { color: #7c8db0; }
+.dark .text-slate-300 { color: #64748b; }
+.dark .text-slate-200 { color: #cbd5e1; }
+
+/* Tinted icon/status backgrounds */
+.dark .bg-teal-50 { background-color: #0f2e2b; }
+.dark .bg-teal-100 { background-color: #123832; }
+.dark .bg-violet-50 { background-color: #241a3d; }
+.dark .bg-blue-50 { background-color: #0f2038; }
+.dark .bg-red-50 { background-color: #34141c; }
+.dark .bg-status-red-bg { background-color: #34141c; }
+.dark .bg-status-green-bg { background-color: #10281c; }
+.dark .bg-status-blue-bg { background-color: #0f2038; }
+.dark .bg-status-amber-bg { background-color: #302109; }
+.dark .bg-status-orange-bg { background-color: #301d09; }
+
+/* Form controls */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #0f1a2e;
+  color: #e2e8f0;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}
+
+/* Hover variants — Tailwind emits these as distinct selectors
+   (.hover\:bg-slate-50:hover), so the static-class overrides above don't
+   reach them; row/button hover states need their own dark repaint. */
+.dark .hover\:bg-slate-50:hover { background-color: #1c2942; }
+.dark .hover\:bg-slate-50\/60:hover { background-color: #1c294299; }
+.dark .hover\:bg-slate-100:hover { background-color: #263454; }
+.dark .hover\:bg-slate-200:hover { background-color: #334155; }
+.dark .hover\:bg-slate-700:hover { background-color: #475569; }
+.dark .hover\:bg-slate-800:hover { background-color: #334155; }
+.dark .hover\:bg-teal-50:hover { background-color: #123832; }
+.dark .hover\:bg-red-50:hover { background-color: #3b1a22; }
+.dark .hover\:bg-status-red-bg:hover { background-color: #3b1a22; }
+.dark .hover\:bg-status-green-bg:hover { background-color: #14301f; }
+.dark .hover\:bg-status-amber-bg:hover { background-color: #372710; }
+.dark .hover\:text-slate-500:hover { color: #cbd5e1; }
+.dark .hover\:text-slate-600:hover { color: #cbd5e1; }
+.dark .hover\:text-slate-700:hover { color: #e2e8f0; }
