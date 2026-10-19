@@ -1,5 +1,29 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+# AuraHealth HMS — Frontend
+
+Next.js frontend for the AuraHealth hospital management system. It needs the
+Spring Boot backend (`hms-backend`) running on `http://localhost:8080`
+(set in `.env.local` as `NEXT_PUBLIC_API_BASE_URL`).
+
+## Demo logins
+
+Every role has a demo account; all use the password `Passw0rd!`.
+See **[DEMO_ACCOUNTS.md](DEMO_ACCOUNTS.md)** for the full list, what each role
+can do, and good records to try.
+
+| Role | Email |
+| --- | --- |
+| Administrator | admin@aurahealth.demo |
+| Doctor | doctor@aurahealth.demo |
+| Student Doctor | student.doctor@aurahealth.demo |
+| Nurse | nurse@aurahealth.demo |
+| Pharmacist | pharmacist@aurahealth.demo |
+| Lab Technician | labtech@aurahealth.demo |
+| Billing Clerk | billing@aurahealth.demo |
+| Front Desk | frontdesk@aurahealth.demo |
+| Compliance / Auditor | compliance@aurahealth.demo |
+
 ## Getting Started
 
 First, run the development server:

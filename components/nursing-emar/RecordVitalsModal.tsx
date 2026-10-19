@@ -4,7 +4,10 @@ import { useState } from "react";
 import { HeartPulse } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import { patientRoster } from "@/lib/nursing-emar-data";
+
+export type RosterOption = { value: string; label: string };
+
+export type VitalsValues = { systolic: number; diastolic: number; pulse: number; temperature: number; spo2: number; respRate: number };
 
 type FormState = {
   patient: string;
@@ -16,31 +19,24 @@ type FormState = {
   resp: string;
 };
 
-const emptyForm: FormState = {
-  patient: patientRoster[0] ?? "",
-  systolic: "",
-  diastolic: "",
-  pulse: "",
-  temp: "",
-  spo2: "",
-  resp: "",
-};
+const blank = { systolic: "", diastolic: "", pulse: "", temp: "", spo2: "", resp: "" };
 
+/** Remount (key) each time it opens so the form starts empty. */
 export default function RecordVitalsModal({
   open,
   onClose,
   onSave,
+  roster,
   initialPatient,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (
-    patientLabel: string,
-    values: { bp: string; pulse: string; temp: string; spo2: string; resp: string }
-  ) => void;
+  /** patient = admission id. Resolve true when saved (closes the dialog). */
+  onSave: (admissionId: string, values: VitalsValues) => Promise<boolean>;
+  roster: RosterOption[];
   initialPatient?: string;
 }) {
-  const [form, setForm] = useState<FormState>({ ...emptyForm, patient: initialPatient ?? emptyForm.patient });
+  const [form, setForm] = useState<FormState>({ ...blank, patient: initialPatient ?? roster[0]?.value ?? "" });
   const [submitting, setSubmitting] = useState(false);
 
   const numericFields: (keyof FormState)[] = ["systolic", "diastolic", "pulse", "temp", "spo2", "resp"];
@@ -48,30 +44,27 @@ export default function RecordVitalsModal({
   const allNumeric = numericFields.every((f) => !Number.isNaN(Number(form[f])) && form[f].trim() !== "");
   const isValid = allFilled && allNumeric;
 
-  function reset() {
-    setForm({ ...emptyForm, patient: initialPatient ?? emptyForm.patient });
-  }
-
   function handleClose() {
     if (submitting) return;
-    reset();
     onClose();
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!isValid) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onSave(form.patient, {
-        bp: `${form.systolic}/${form.diastolic}`,
-        pulse: form.pulse,
-        temp: form.temp,
-        spo2: form.spo2,
-        resp: form.resp,
+    try {
+      const ok = await onSave(form.patient, {
+        systolic: Number(form.systolic),
+        diastolic: Number(form.diastolic),
+        pulse: Number(form.pulse),
+        temperature: Number(form.temp),
+        spo2: Number(form.spo2),
+        respRate: Number(form.resp),
       });
+      if (ok) onClose();
+    } finally {
       setSubmitting(false);
-      reset();
-    }, 400);
+    }
   }
 
   return (
@@ -101,9 +94,10 @@ export default function RecordVitalsModal({
             onChange={(e) => setForm((f) => ({ ...f, patient: e.target.value }))}
             className="mt-1 w-full rounded-md border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-teal"
           >
-            {patientRoster.map((p) => (
-              <option key={p} value={p}>
-                {p}
+            {roster.length === 0 && <option value="">No patients on this ward</option>}
+            {roster.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
               </option>
             ))}
           </select>

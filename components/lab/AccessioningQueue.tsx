@@ -14,6 +14,7 @@ const statusStyle: Record<StatusTone, string> = {
 
 function matchesTab(item: SpecimenItem, tab: QueueTabId): boolean {
   if (tab === "all") return true;
+  if (tab === "receive") return item.backendStatus === "ORDERED";
   if (tab === "stat") return item.category === "stat" || item.urgent === true;
   if (tab === "chem") return item.category === "chem";
   return true;
@@ -53,7 +54,7 @@ export default function AccessioningQueue({
     <Card
       icon={ScanBarcode}
       iconClassName="bg-teal-50 text-brand-teal"
-      title="Accessioning Queue"
+      title="Lab Worklist"
       headerClassName="px-4 py-3"
       bodyClassName="p-3"
       action={<span className="text-sm font-bold text-slate-800">{specimens.length} Total</span>}

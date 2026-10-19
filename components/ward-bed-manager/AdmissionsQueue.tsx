@@ -38,7 +38,7 @@ function AssignModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (target: TransferTarget) => void;
+  onConfirm: (target: TransferTarget) => void | Promise<void>;
   request: AdmissionRequest | null;
   availableTargets: TransferTarget[];
 }) {
@@ -47,7 +47,7 @@ function AssignModal({
 
   useEffect(() => {
     if (open && request) {
-      const preferred = availableTargets.find((t) => t.bedId === request.suggestedBed);
+      const preferred = availableTargets.find((t) => t.bedId === (request.suggestedBedId ?? request.suggestedBed));
       setTargetKey(preferred ? `${preferred.ward}:${preferred.bedId}` : "");
     }
   }, [open, request, availableTargets]);
@@ -57,14 +57,15 @@ function AssignModal({
     onClose();
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     const target = availableTargets.find((t) => `${t.ward}:${t.bedId}` === targetKey);
     if (!target) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onConfirm(target);
+    try {
+      await onConfirm(target);
+    } finally {
       setSubmitting(false);
-    }, 400);
+    }
   }
 
   return (
@@ -117,8 +118,9 @@ export default function AdmissionsQueue({
 }: {
   queue: AdmissionRequest[];
   availableTargets: TransferTarget[];
-  onAssign: (requestId: string, target: TransferTarget) => void;
-  onDecline: (requestId: string, reason: string) => void;
+  /** Resolve true when the patient was admitted (closes the dialog). */
+  onAssign: (requestId: string, target: TransferTarget) => Promise<boolean>;
+  onDecline: (requestId: string, reason: string) => Promise<boolean>;
 }) {
   const [assignRequest, setAssignRequest] = useState<AdmissionRequest | null>(null);
   const [declineRequest, setDeclineRequest] = useState<AdmissionRequest | null>(null);
@@ -191,17 +193,16 @@ export default function AdmissionsQueue({
         onClose={() => setAssignRequest(null)}
         request={assignRequest}
         availableTargets={availableTargets}
-        onConfirm={(target) => {
-          if (assignRequest) onAssign(assignRequest.id, target);
-          setAssignRequest(null);
+        onConfirm={async (target) => {
+          if (assignRequest && (await onAssign(assignRequest.id, target))) setAssignRequest(null);
         }}
       />
 
       <ConfirmModal
         open={!!declineRequest}
         onClose={() => setDeclineRequest(null)}
-        onConfirm={(reason) => {
-          if (declineRequest) onDecline(declineRequest.id, reason ?? "");
+        onConfirm={async (reason) => {
+          if (declineRequest && !(await onDecline(declineRequest.id, reason ?? ""))) return;
           setDeclineRequest(null);
         }}
         variant="reject"

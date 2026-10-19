@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import NoticeBanner from "@/components/NoticeBanner";
+import SystemLoader from "@/components/ui/SystemLoader";
 import { useAuth, canAccess, ROLE_HOME } from "@/lib/auth";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -26,7 +27,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (loading || !user || !canAccess(user.role, pathname)) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
-        <p className="text-sm font-medium text-slate-400">Loading AuraHealth HMS…</p>
+        <SystemLoader
+          title="Loading AuraHealth HMS"
+          subtitle="Verifying access and loading clinical modules…"
+          className="w-full"
+        />
       </div>
     );
   }

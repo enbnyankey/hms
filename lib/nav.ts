@@ -10,6 +10,7 @@ import {
   BarChart3,
   ShieldCheck,
   BadgeCheck,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "./auth";
@@ -35,6 +36,7 @@ export const navItems: NavItem[] = [
   { label: "Billing & NHIS Claims", href: "/billing-claims", icon: CreditCard },
   { label: "Reports & Analytics", href: "/reports-analytics", icon: BarChart3 },
   { label: "Audit Trail & Logs", href: "/audit-trail", icon: ShieldCheck },
+  { label: "Hospital Profile", href: "/hospital-profile", icon: Building2 },
 ];
 
 export function navItemsForRole(role: Role): NavItem[] {

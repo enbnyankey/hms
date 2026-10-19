@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["lib/hospital-api.ts", "app/(dashboard)/hospital-profile/page.tsx", "lib/auth.tsx", "lib/nav.ts", "lib/api.ts", "components/Card.tsx"]
+}

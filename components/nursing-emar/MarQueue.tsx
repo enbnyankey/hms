@@ -14,7 +14,6 @@ import {
 import Card from "@/components/Card";
 import Button from "@/components/ui/Button";
 import ConfirmModal from "@/components/ui/ConfirmModal";
-import { actionToast } from "@/lib/actions";
 import { doseFilters, type MarDose, type DoseStatus } from "@/lib/nursing-emar-data";
 import AdministerDoseModal from "./AdministerDoseModal";
 import DoseViewModal from "./DoseViewModal";
@@ -22,16 +21,21 @@ import DoseViewModal from "./DoseViewModal";
 const statusStyle: Record<DoseStatus, string> = {
   "Due Now": "bg-status-blue-bg text-status-blue",
   Overdue: "bg-status-red-bg text-status-red",
+  Upcoming: "bg-slate-100 text-slate-500",
+  PRN: "bg-teal-50 text-brand-teal",
   Given: "bg-status-green-bg text-status-green",
   Held: "bg-status-amber-bg text-status-amber",
 };
 
 export default function MarQueue({
   doses,
-  onUpdateDose,
+  onGive,
+  onHold,
 }: {
   doses: MarDose[];
-  onUpdateDose: (updated: MarDose) => void;
+  /** Resolve true when saved (closes the dialog). */
+  onGive: (dose: MarDose, values: { givenAt: string; route: string; witnessedBy?: string }) => Promise<boolean>;
+  onHold: (dose: MarDose, reason: string) => Promise<boolean>;
 }) {
   const [activeFilter, setActiveFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -44,6 +48,8 @@ export default function MarQueue({
     all: doses.length,
     due: doses.filter((d) => d.status === "Due Now").length,
     overdue: doses.filter((d) => d.status === "Overdue").length,
+    upcoming: doses.filter((d) => d.status === "Upcoming").length,
+    prn: doses.filter((d) => d.status === "PRN").length,
     completed: doses.filter((d) => d.status === "Given" || d.status === "Held").length,
   };
 
@@ -53,6 +59,8 @@ export default function MarQueue({
       activeFilter === "all" ||
       (activeFilter === "due" && d.status === "Due Now") ||
       (activeFilter === "overdue" && d.status === "Overdue") ||
+      (activeFilter === "upcoming" && d.status === "Upcoming") ||
+      (activeFilter === "prn" && d.status === "PRN") ||
       (activeFilter === "completed" && (d.status === "Given" || d.status === "Held"));
     if (!matchesFilter) return false;
     if (!query) return true;
@@ -63,42 +71,13 @@ export default function MarQueue({
     );
   });
 
-  function confirmAdminister(doseId: string, values: { givenAt: string; route: string; witnessedBy?: string }) {
+  async function confirmAdminister(doseId: string, values: { givenAt: string; route: string; witnessedBy?: string }) {
     const dose = doses.find((d) => d.id === doseId);
-    if (!dose) return;
-    const updated: MarDose = {
-      ...dose,
-      status: "Given",
-      givenAt: values.givenAt,
-      givenBy: "Nurse Abena Owusu",
-      witnessedBy: values.witnessedBy,
-      route: values.route,
-      history: [
-        { time: `25 Sep, ${values.givenAt}`, by: "Nurse Abena Owusu", note: "Given on time" },
-        ...dose.history,
-      ],
-    };
-    onUpdateDose(updated);
-    actionToast(
-      "Dose administered",
-      `${dose.drug} ${dose.dose} given to ${dose.patientName} at ${values.givenAt}${
-        values.witnessedBy ? ` · Witnessed by ${values.witnessedBy}` : ""
-      }`,
-      "success"
-    );
-    setAdministerDose(null);
+    if (dose && (await onGive(dose, values))) setAdministerDose(null);
   }
 
-  function confirmHold(reason?: string) {
-    if (!holdDose) return;
-    const updated: MarDose = { ...holdDose, status: "Held", heldReason: reason || "No reason provided" };
-    onUpdateDose(updated);
-    actionToast(
-      "Dose held",
-      `${holdDose.drug} ${holdDose.dose} for ${holdDose.patientName} · Reason: ${reason || "—"}`,
-      "warning"
-    );
-    setHoldDose(null);
+  async function confirmHold(reason?: string) {
+    if (holdDose && (await onHold(holdDose, reason ?? ""))) setHoldDose(null);
   }
 
   return (
@@ -106,7 +85,7 @@ export default function MarQueue({
       icon={ClipboardList}
       iconClassName="bg-teal-50 text-brand-teal"
       title="Electronic Medication Administration Record (eMAR)"
-      subtitle="Scheduled doses across the current shift"
+      subtitle="Today’s doses for patients on this ward"
       headerClassName="px-4 py-3"
       bodyClassName="p-4"
       action={
@@ -148,7 +127,7 @@ export default function MarQueue({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse text-left">
+        <table className="w-full min-w-[720px] border-collapse text-left">
           <thead>
             <tr className="border-b border-surface-border text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               <th className="px-2 py-2">Patient / Bed</th>
@@ -202,7 +181,7 @@ export default function MarQueue({
                     <Button
                       variant="danger"
                       className="!rounded-md !px-2 !py-1 !text-[10px]"
-                      disabled={dose.status === "Given" || dose.status === "Held"}
+                      disabled={dose.status === "Given" || dose.status === "Held" || dose.status === "PRN"}
                       onClick={() => setHoldDose(dose)}
                     >
                       <XCircle className="h-3 w-3" /> Hold
@@ -210,7 +189,8 @@ export default function MarQueue({
                     <Button
                       variant="success"
                       className="!rounded-md !px-2 !py-1 !text-[10px]"
-                      disabled={dose.status === "Given" || dose.status === "Held"}
+                      disabled={dose.status === "Given" || dose.status === "Held" || dose.status === "Upcoming"}
+                      title={dose.status === "Upcoming" ? "Doses can be given from an hour before their time" : undefined}
                       onClick={() => setAdministerDose(dose)}
                     >
                       <CheckCircle2 className="h-3 w-3" /> Give
@@ -225,7 +205,7 @@ export default function MarQueue({
         {filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-surface-border py-10 text-center">
             <Inbox className="h-6 w-6 text-slate-300" />
-            <p className="text-xs font-semibold text-slate-500">No scheduled doses match this view</p>
+            <p className="text-xs font-semibold text-slate-500">No doses match this view</p>
             <p className="text-[11px] text-slate-400">Try a different filter, or clear your search.</p>
           </div>
         )}

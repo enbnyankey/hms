@@ -1,5 +1,5 @@
 import { Archive, RefreshCw, AlertTriangle, Clock } from "lucide-react";
-import { labKpis } from "@/lib/lab-data";
+import type { LabSummary } from "@/lib/lab-api";
 
 const toneText: Record<string, string> = {
   danger: "text-status-red",
@@ -20,7 +20,28 @@ const iconTone: Record<string, string> = {
   tat: "bg-status-green-bg text-status-green",
 };
 
-export default function LabKpis() {
+export default function LabKpis({ summary }: { summary: LabSummary | null }) {
+  const s = summary;
+  const labKpis: { id: string; label: string; value: string; unit?: string; note: string; tone?: "danger" | "success" }[] = [
+    { id: "pending", label: "Awaiting Specimen", value: String(s?.awaitingAccession ?? "—"), unit: "Orders", note: "Ordered, not yet received" },
+    { id: "running", label: "In Analysis", value: String(s?.inAnalysis ?? "—"), unit: "Specimens", note: `${s?.awaitingValidation ?? 0} awaiting validation` },
+    {
+      id: "panic",
+      label: "Critical Values",
+      value: String(s?.criticalPending ?? "—"),
+      unit: "Calls Pending",
+      note: "Phone + read-back before release",
+      tone: s && s.criticalPending > 0 ? "danger" : undefined,
+    },
+    {
+      id: "tat",
+      label: "TAT Compliance (STAT)",
+      value: s?.statTatCompliancePct != null ? `${s.statTatCompliancePct}%` : "—",
+      unit: "Target <45m",
+      note: s?.statAvgTatMinutes != null ? `Avg ${s.statAvgTatMinutes} min · ${s.statValidatedToday} STAT today` : "No STAT results today",
+      tone: s?.statTatCompliancePct != null && s.statTatCompliancePct >= 90 ? "success" : s?.statTatCompliancePct != null ? "danger" : undefined,
+    },
+  ];
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       {labKpis.map((kpi) => {

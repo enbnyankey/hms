@@ -1,124 +1,130 @@
 "use client";
 
-import { useState } from "react";
-import { Microscope, LineChart, ClipboardCheck, PlusCircle, Beaker, CheckCircle2 } from "lucide-react";
-import { labHeader, specimenTypeOptions, STATUS_TONE, type SpecimenItem } from "@/lib/lab-data";
-import { actionToast } from "@/lib/actions";
+import { useRef, useState } from "react";
+import { Microscope, LineChart, ClipboardCheck, PlusCircle, Beaker, CheckCircle2, Search } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
+import type { SpecimenItem } from "@/lib/lab-data";
+import type { Analyzer, LabTestDto, QcRun } from "@/lib/lab-api";
+import { dayClock, fetchQcRuns } from "@/lib/lab-api";
+import { searchPatients, ageSex, type PatientOption } from "@/lib/ward-api";
 
-const qcRuns = [
-  { analyte: "Glucose (Level 1)", target: "5.0 mmol/L", result: "5.1 mmol/L", status: "In Control" },
-  { analyte: "Glucose (Level 2)", target: "12.0 mmol/L", result: "12.4 mmol/L", status: "In Control" },
-  { analyte: "Creatinine (Level 1)", target: "88 µmol/L", result: "91 µmol/L", status: "In Control" },
-  { analyte: "Potassium (Level 2)", target: "5.5 mmol/L", result: "6.3 mmol/L", status: "Westgard 1-3s Flag" },
-  { analyte: "Hemoglobin (Level 1)", target: "12.0 g/dL", result: "12.1 g/dL", status: "In Control" },
-];
+const inputClass =
+  "mt-1 w-full rounded-md border border-surface-border px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:border-brand-teal";
 
-const validationBatch = [
-  { specId: "#SP-2024-9412-CHM", patient: "Kofi Mensah", test: "Fasting Lipid Profile" },
-  { specId: "#SP-2024-9418-HEM", patient: "Adjoa Sarpong", test: "Full Blood Count" },
-  { specId: "#SP-2024-9421-CHM", patient: "Yaw Boadi", test: "Liver Function Panel" },
-];
+export type NewOrderValues = { patientId: string; testCode: string; priority: string; clinicalNotes: string; receiveNow: boolean; analyzerId: string };
 
-type FormState = {
-  patient: string;
-  age: string;
-  sex: string;
-  mrn: string;
-  ward: string;
-  bed: string;
-  consultant: string;
-  specType: string;
-  testOrder: string;
-  urgent: boolean;
-};
+export default function LabHeader({
+  tests,
+  analyzers,
+  pendingValidation,
+  canWork,
+  onNewOrder,
+  onBatchValidate,
+  onRecordQc,
+}: {
+  tests: LabTestDto[];
+  analyzers: Analyzer[];
+  /** Resulted specimens without critical values (safe to release together). */
+  pendingValidation: SpecimenItem[];
+  canWork: boolean;
+  onNewOrder: (v: NewOrderValues) => Promise<boolean>;
+  onBatchValidate: (ids: string[]) => Promise<boolean>;
+  onRecordQc: (v: { analyzerId: string; analyte: string; level: string; targetMean: number; targetSd: number; result: number }) => Promise<boolean>;
+}) {
+  // ---- new order ----
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PatientOption[]>([]);
+  const [patient, setPatient] = useState<PatientOption | null>(null);
+  const [testCode, setTestCode] = useState("");
+  const [priority, setPriority] = useState("ROUTINE");
+  const [notes, setNotes] = useState("");
+  const [receiveNow, setReceiveNow] = useState(true);
+  const [analyzerId, setAnalyzerId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-const emptyForm: FormState = {
-  patient: "",
-  age: "",
-  sex: "Male",
-  mrn: "",
-  ward: "",
-  bed: "",
-  consultant: "",
-  specType: "CHM",
-  testOrder: "",
-  urgent: false,
-};
-
-let nextSpecimenSeq = 9500;
-
-export default function LabHeader({ onAccession }: { onAccession: (specimen: SpecimenItem) => void }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  // ---- QC ----
   const [qcOpen, setQcOpen] = useState(false);
+  const [qcRuns, setQcRuns] = useState<QcRun[] | null>(null);
+  const [qc, setQc] = useState({ analyzerId: "", analyte: "", level: "Level 1", targetMean: "", targetSd: "", result: "" });
+
+  // ---- batch ----
   const [batchOpen, setBatchOpen] = useState(false);
-  const [validating, setValidating] = useState(false);
-  const [validated, setValidated] = useState(false);
 
-  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setErrors((prev) => ({ ...prev, [key]: undefined }));
+  const online = analyzers.filter((a) => a.status === "ONLINE");
+
+  function openOrder() {
+    setQuery("");
+    setResults([]);
+    setPatient(null);
+    setTestCode(tests[0]?.code ?? "");
+    setPriority("ROUTINE");
+    setNotes("");
+    setReceiveNow(canWork);
+    setAnalyzerId("");
+    setOrderOpen(true);
   }
 
-  function validate(): boolean {
-    const next: Partial<Record<keyof FormState, string>> = {};
-    if (!form.patient.trim()) next.patient = "Patient name is required.";
-    if (!form.mrn.trim()) next.mrn = "MRN is required.";
-    if (!form.age.trim()) next.age = "Age is required.";
-    if (!form.ward.trim()) next.ward = "Ward is required.";
-    if (!form.testOrder.trim()) next.testOrder = "Test order is required.";
-    setErrors(next);
-    return Object.keys(next).length === 0;
+  function onQuery(v: string) {
+    setQuery(v);
+    setPatient(null);
+    if (timer.current) clearTimeout(timer.current);
+    if (v.trim().length < 2) return setResults([]);
+    timer.current = setTimeout(async () => {
+      try {
+        setResults(await searchPatients(v.trim()));
+      } catch {
+        setResults([]);
+      }
+    }, 250);
   }
 
-  function handleClose() {
-    if (submitting) return;
-    setOpen(false);
-    setForm(emptyForm);
-    setErrors({});
+  async function submitOrder() {
+    if (!patient || !testCode) return;
+    setBusy(true);
+    try {
+      const ok = await onNewOrder({ patientId: patient.id, testCode, priority, clinicalNotes: notes.trim(), receiveNow, analyzerId });
+      if (ok) setOrderOpen(false);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleSubmit() {
-    if (!validate()) return;
-    setSubmitting(true);
-    setTimeout(() => {
-      const typeCfg = specimenTypeOptions.find((t) => t.value === form.specType) ?? specimenTypeOptions[0];
-      const seq = nextSpecimenSeq++;
-      const status = form.urgent ? "STAT Run" : "Pending Analysis";
-      const specimen: SpecimenItem = {
-        id: `s-${seq}`,
-        specId: `#SP-2024-${seq}-${typeCfg.value}`,
-        specType: typeCfg.value,
-        status,
-        statusTone: STATUS_TONE[status],
-        category: form.urgent ? "stat" : typeCfg.category,
-        urgent: form.urgent,
-        patient: form.patient.trim(),
-        age: `${form.age.trim()} yrs`,
-        sex: form.sex,
-        mrn: form.mrn.trim(),
-        ward: form.ward.trim(),
-        bed: form.bed.trim() || "—",
-        consultant: form.consultant.trim() || "Unassigned",
-        collection: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " GMT",
-        analyzer: "Awaiting Assignment",
-        detail: `${form.age.trim()}${form.sex[0]} · MRN #${form.mrn.trim()} · ${form.ward.trim()}`,
-        containerDot: typeCfg.containerDot,
-        container: typeCfg.container,
-        testOrder: form.testOrder.trim(),
-        analytes: [],
-      };
-      onAccession(specimen);
-      actionToast("New specimen accessioned", `${specimen.specId} · ${specimen.patient} added to the queue.`, "success");
-      setSubmitting(false);
-      setOpen(false);
-      setForm(emptyForm);
-      setErrors({});
-    }, 400);
+  async function openQc() {
+    setQcOpen(true);
+    setQc({ analyzerId: online[0]?.id ?? "", analyte: "", level: "Level 1", targetMean: "", targetSd: "", result: "" });
+    setQcRuns(null);
+    try {
+      setQcRuns(await fetchQcRuns());
+    } catch {
+      setQcRuns([]);
+    }
+  }
+
+  const qcValid =
+    qc.analyzerId && qc.analyte.trim() && [qc.targetMean, qc.targetSd, qc.result].every((x) => x.trim() !== "" && !Number.isNaN(Number(x))) && Number(qc.targetSd) > 0;
+
+  async function submitQc() {
+    if (!qcValid) return;
+    setBusy(true);
+    try {
+      const ok = await onRecordQc({
+        analyzerId: qc.analyzerId,
+        analyte: qc.analyte.trim(),
+        level: qc.level,
+        targetMean: Number(qc.targetMean),
+        targetSd: Number(qc.targetSd),
+        result: Number(qc.result),
+      });
+      if (ok) {
+        setQc((q) => ({ ...q, result: "" }));
+        setQcRuns(await fetchQcRuns());
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -129,268 +135,253 @@ export default function LabHeader({ onAccession }: { onAccession: (specimen: Spe
         </span>
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-bold text-slate-900">{labHeader.title}</h1>
-            <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white">
-              {labHeader.block}
-            </span>
+            <h1 className="text-lg font-bold text-slate-900">Central Pathology &amp; Clinical Chemistry</h1>
+            <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white">LAB BLOCK 2</span>
           </div>
           <p className="text-xs text-slate-400">
-            {labHeader.supervisor} · {labHeader.role} · <span className="font-semibold text-status-green">{labHeader.lisStatus}</span>
+            Laboratory Information System · <span className="font-semibold text-status-green">{online.length} of {analyzers.length} analyzers online</span>
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => setQcOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-surface-border bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          <LineChart className="h-3.5 w-3.5" />
-          QC Log (Levey-Jennings)
+        <button onClick={openQc} className="flex items-center gap-1.5 rounded-lg border border-surface-border bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+          <LineChart className="h-3.5 w-3.5" /> QC Log
         </button>
-        <button
-          onClick={() => {
-            setBatchOpen(true);
-            setValidated(false);
-          }}
-          className="flex items-center gap-1.5 rounded-lg border border-surface-border bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          <ClipboardCheck className="h-3.5 w-3.5" />
-          Batch Validation
-        </button>
-        <button
-          onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-brand-teal px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700"
-        >
-          <PlusCircle className="h-3.5 w-3.5" />
-          Accession Specimen
+        {canWork && (
+          <button
+            onClick={() => setBatchOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-surface-border bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" /> Batch Validation ({pendingValidation.length})
+          </button>
+        )}
+        <button onClick={openOrder} className="flex items-center gap-1.5 rounded-lg bg-brand-teal px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700">
+          <PlusCircle className="h-3.5 w-3.5" /> New Lab Order
         </button>
       </div>
 
+      {/* ---- new order ---- */}
       <Modal
-        open={open}
-        onClose={handleClose}
-        title="Accession New Specimen"
-        description="Register a newly received specimen into the LIS queue."
+        open={orderOpen}
+        onClose={() => !busy && setOrderOpen(false)}
+        title="New Lab Order"
+        description="Request a test for a registered patient"
         icon={Beaker}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={handleClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSubmit} loading={submitting}>
-              Accession Specimen
+            <Button variant="secondary" onClick={() => setOrderOpen(false)} disabled={busy}>Cancel</Button>
+            <Button variant="primary" onClick={submitOrder} loading={busy} disabled={!patient || !testCode}>
+              {receiveNow ? "Order & Receive" : "Place Order"}
             </Button>
           </>
         }
       >
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Patient Name" error={errors.patient} className="col-span-2">
-            <input
-              value={form.patient}
-              onChange={(e) => set("patient", e.target.value)}
-              placeholder="e.g. Ama Owusu"
-              className={inputClass(!!errors.patient)}
-            />
-          </Field>
-          <Field label="Age" error={errors.age}>
-            <input
-              value={form.age}
-              onChange={(e) => set("age", e.target.value)}
-              placeholder="e.g. 45"
-              className={inputClass(!!errors.age)}
-            />
-          </Field>
-          <Field label="Sex">
-            <select value={form.sex} onChange={(e) => set("sex", e.target.value)} className={inputClass(false)}>
-              <option>Male</option>
-              <option>Female</option>
-            </select>
-          </Field>
-          <Field label="MRN" error={errors.mrn}>
-            <input
-              value={form.mrn}
-              onChange={(e) => set("mrn", e.target.value)}
-              placeholder="e.g. GH-2024-1234"
-              className={inputClass(!!errors.mrn)}
-            />
-          </Field>
-          <Field label="Ward" error={errors.ward}>
-            <input
-              value={form.ward}
-              onChange={(e) => set("ward", e.target.value)}
-              placeholder="e.g. Ward B"
-              className={inputClass(!!errors.ward)}
-            />
-          </Field>
-          <Field label="Bed">
-            <input
-              value={form.bed}
-              onChange={(e) => set("bed", e.target.value)}
-              placeholder="e.g. B-04"
-              className={inputClass(false)}
-            />
-          </Field>
-          <Field label="Consultant">
-            <input
-              value={form.consultant}
-              onChange={(e) => set("consultant", e.target.value)}
-              placeholder="e.g. Dr. Ansah"
-              className={inputClass(false)}
-            />
-          </Field>
-          <Field label="Specimen Type" className="col-span-2">
-            <select value={form.specType} onChange={(e) => set("specType", e.target.value)} className={inputClass(false)}>
-              {specimenTypeOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Test Order" error={errors.testOrder} className="col-span-2">
-            <input
-              value={form.testOrder}
-              onChange={(e) => set("testOrder", e.target.value)}
-              placeholder="e.g. FBC + ESR"
-              className={inputClass(!!errors.testOrder)}
-            />
-          </Field>
-          <label className="col-span-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <input
-              type="checkbox"
-              checked={form.urgent}
-              onChange={(e) => set("urgent", e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-surface-border text-brand-teal focus:ring-brand-teal"
-            />
-            Mark as STAT / Urgent
-          </label>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Patient</label>
+            {patient ? (
+              <div className="mt-1 flex items-center justify-between rounded-md border border-teal-200 bg-teal-50 px-3 py-2">
+                <p className="text-sm font-semibold text-slate-800">
+                  {patient.name} <span className="text-[11px] font-normal text-slate-500">{patient.mrn} · {ageSex(patient.age, patient.sex)}</span>
+                </p>
+                <button onClick={() => setPatient(null)} className="text-[11px] font-semibold text-brand-teal hover:underline">Change</button>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 mt-0.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+                  <input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search name, MRN or phone…" className={`${inputClass} pl-8`} />
+                </div>
+                {query.trim().length >= 2 && (
+                  <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-surface-border">
+                    {results.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-slate-400">No active patient matches.</p>
+                    ) : (
+                      results.map((p) => (
+                        <button key={p.id} onClick={() => setPatient(p)} className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50">
+                          <span className="text-xs font-semibold text-slate-700">{p.name}</span>
+                          <span className="text-[11px] text-slate-400">{p.mrn} · {ageSex(p.age, p.sex)}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Test</label>
+              <select value={testCode} onChange={(e) => setTestCode(e.target.value)} className={inputClass}>
+                {tests.map((t) => (
+                  <option key={t.code} value={t.code}>{t.name} ({t.specimenType})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Priority</label>
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputClass}>
+                <option value="ROUTINE">Routine</option>
+                <option value="URGENT">Urgent</option>
+                <option value="STAT">STAT</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Clinical notes (optional)</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Query sepsis, on IV antibiotics" className={inputClass} />
+          </div>
+          {canWork && (
+            <div className="rounded-md border border-surface-border bg-slate-50 p-2.5">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input type="checkbox" checked={receiveNow} onChange={(e) => setReceiveNow(e.target.checked)} className="h-3.5 w-3.5" />
+                Specimen is here — receive it now
+              </label>
+              {receiveNow && (
+                <select value={analyzerId} onChange={(e) => setAnalyzerId(e.target.value)} className={inputClass}>
+                  <option value="">Manual / bench</option>
+                  {online.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
 
+      {/* ---- QC ---- */}
       <Modal
         open={qcOpen}
-        onClose={() => setQcOpen(false)}
-        title="QC Log — Levey-Jennings"
-        description="Current run · Chemistry Analyzer 2"
+        onClose={() => !busy && setQcOpen(false)}
+        title="Quality Control Log"
+        description="In control when within ±2 SD of target (Westgard 1-2s)"
         icon={LineChart}
-        size="md"
-        footer={<Button variant="secondary" onClick={() => setQcOpen(false)}>Close</Button>}
+        size="lg"
+        footer={<Button variant="secondary" onClick={() => setQcOpen(false)} disabled={busy}>Close</Button>}
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-slate-400">
-                <th className="pb-2 font-semibold">Analyte / Level</th>
-                <th className="pb-2 font-semibold">Target</th>
-                <th className="pb-2 font-semibold">Result</th>
-                <th className="pb-2 font-semibold text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-border">
-              {qcRuns.map((row) => (
-                <tr key={row.analyte}>
-                  <td className="py-2 pr-2 font-medium text-slate-700">{row.analyte}</td>
-                  <td className="py-2 pr-2 text-slate-500">{row.target}</td>
-                  <td className="py-2 pr-2 font-semibold text-slate-800">{row.result}</td>
-                  <td className="py-2 text-right">
-                    <span
-                      className={`rounded px-2 py-0.5 text-[10px] font-bold ${
-                        row.status === "In Control"
-                          ? "bg-status-green-bg text-status-green"
-                          : "bg-status-amber-bg text-status-amber"
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
+        {canWork && (
+          <div className="mb-3 grid grid-cols-6 items-end gap-2 rounded-md border border-surface-border bg-slate-50 p-2.5">
+            <div className="col-span-2">
+              <label className="text-[10px] font-semibold uppercase text-slate-400">Analyzer</label>
+              <select value={qc.analyzerId} onChange={(e) => setQc({ ...qc, analyzerId: e.target.value })} className="mt-1 w-full rounded border border-surface-border px-2 py-1.5 text-xs">
+                {analyzers.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="text-[10px] font-semibold uppercase text-slate-400">Analyte</label>
+              <input value={qc.analyte} onChange={(e) => setQc({ ...qc, analyte: e.target.value })} placeholder="e.g. Potassium" className="mt-1 w-full rounded border border-surface-border px-2 py-1.5 text-xs" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-[10px] font-semibold uppercase text-slate-400">Level</label>
+              <select value={qc.level} onChange={(e) => setQc({ ...qc, level: e.target.value })} className="mt-1 w-full rounded border border-surface-border px-2 py-1.5 text-xs">
+                <option>Level 1</option>
+                <option>Level 2</option>
+                <option>Level 3</option>
+              </select>
+            </div>
+            {(["targetMean", "targetSd", "result"] as const).map((k) => (
+              <div key={k} className="col-span-2">
+                <label className="text-[10px] font-semibold uppercase text-slate-400">{k === "targetMean" ? "Target mean" : k === "targetSd" ? "Target SD" : "Result"}</label>
+                <input value={qc[k]} onChange={(e) => setQc({ ...qc, [k]: e.target.value })} inputMode="decimal" className="mt-1 w-full rounded border border-surface-border px-2 py-1.5 text-xs" />
+              </div>
+            ))}
+            <div className="col-span-6 flex justify-end">
+              <Button variant="primary" onClick={submitQc} loading={busy} disabled={!qcValid}>Record QC Run</Button>
+            </div>
+          </div>
+        )}
+        {qcRuns === null ? (
+          <p className="py-4 text-center text-xs text-slate-400">Loading…</p>
+        ) : qcRuns.length === 0 ? (
+          <p className="py-4 text-center text-xs text-slate-400">No QC runs recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wide text-slate-400">
+                  <th className="pb-2 font-semibold">When</th>
+                  <th className="pb-2 font-semibold">Analyzer</th>
+                  <th className="pb-2 font-semibold">Analyte / Level</th>
+                  <th className="pb-2 font-semibold">Target</th>
+                  <th className="pb-2 font-semibold">Result</th>
+                  <th className="pb-2 font-semibold text-right">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-surface-border">
+                {qcRuns.map((r) => (
+                  <tr key={r.id}>
+                    <td className="py-2 pr-2 text-slate-500">{dayClock(r.runAt)}</td>
+                    <td className="py-2 pr-2 text-slate-500">{r.analyzer}</td>
+                    <td className="py-2 pr-2 font-medium text-slate-700">{r.analyte} ({r.level})</td>
+                    <td className="py-2 pr-2 text-slate-500">{r.targetMean} ± {r.targetSd}</td>
+                    <td className="py-2 pr-2 font-semibold text-slate-800">{r.result} <span className="font-normal text-slate-400">({r.zScore} SD)</span></td>
+                    <td className="py-2 text-right">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${r.inControl ? "bg-status-green-bg text-status-green" : "bg-status-red-bg text-status-red"}`}>
+                        {r.inControl ? "In Control" : "Out of Control"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>
 
+      {/* ---- batch validation ---- */}
       <Modal
         open={batchOpen}
-        onClose={() => {
-          if (validating) return;
-          setBatchOpen(false);
-        }}
+        onClose={() => !busy && setBatchOpen(false)}
         title="Batch Validation"
-        description="Pending analyte results awaiting supervisory sign-off"
+        description="Resulted specimens with no critical values"
         icon={ClipboardCheck}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setBatchOpen(false)} disabled={validating}>
-              Close
-            </Button>
-            {!validated && (
+            <Button variant="secondary" onClick={() => setBatchOpen(false)} disabled={busy}>Close</Button>
+            {pendingValidation.length > 0 && (
               <Button
                 variant="primary"
-                loading={validating}
-                onClick={() => {
-                  setValidating(true);
-                  setTimeout(() => {
-                    setValidating(false);
-                    setValidated(true);
-                    actionToast("Batch validated", `${validationBatch.length} specimen results validated and released.`, "success");
-                  }, 700);
+                loading={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    if (await onBatchValidate(pendingValidation.map((s) => s.id))) setBatchOpen(false);
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
               >
-                Validate All
+                Validate All ({pendingValidation.length})
               </Button>
             )}
           </>
         }
       >
-        {validated ? (
+        {pendingValidation.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-6 text-center">
             <CheckCircle2 className="h-8 w-8 text-status-green" />
-            <p className="text-sm font-semibold text-slate-700">Batch validated</p>
-            <p className="text-xs text-slate-400">All {validationBatch.length} results have been released to their ordering physicians.</p>
+            <p className="text-sm font-semibold text-slate-700">Nothing waiting</p>
+            <p className="text-xs text-slate-400">Results with critical values are validated one by one after the phone call.</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {validationBatch.map((row) => (
-              <div key={row.specId} className="flex items-center justify-between rounded-md border border-surface-border px-3 py-2">
+            {pendingValidation.map((row) => (
+              <div key={row.id} className="flex items-center justify-between rounded-md border border-surface-border px-3 py-2">
                 <div>
                   <p className="text-xs font-semibold text-slate-800">{row.patient}</p>
-                  <p className="text-[11px] text-slate-400">{row.specId} · {row.test}</p>
+                  <p className="text-[11px] text-slate-400">{row.specId} · {row.testOrder}</p>
                 </div>
-                <span className="rounded bg-status-amber-bg px-2 py-0.5 text-[10px] font-bold text-status-amber">Pending</span>
+                <span className="text-[10px] text-slate-400">{row.analytes.filter((a) => a.flagTone !== "normal").length} abnormal</span>
               </div>
             ))}
           </div>
         )}
       </Modal>
-    </div>
-  );
-}
-
-function inputClass(hasError: boolean) {
-  return `mt-1 w-full rounded-md border px-2.5 py-1.5 text-xs text-slate-800 outline-none placeholder:text-slate-300 focus:border-brand-teal ${
-    hasError ? "border-status-red" : "border-surface-border"
-  }`;
-}
-
-function Field({
-  label,
-  error,
-  className = "",
-  children,
-}: {
-  label: string;
-  error?: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={className}>
-      <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</label>
-      {children}
-      {error && <p className="mt-0.5 text-[10px] font-medium text-status-red">{error}</p>}
     </div>
   );
 }

@@ -3,11 +3,13 @@
 import { useMemo } from "react";
 import { UserPlus, Users, ShieldAlert, Database, Copy, ShieldCheck } from "lucide-react";
 import { type PatientRecord } from "@/lib/patient-registry-data";
+import { todayLabel } from "@/lib/api";
 
 export default function RegistryKpis({ patients }: { patients: PatientRecord[] }) {
   const kpis = useMemo(() => {
     const active = patients.filter((p) => p.status === "Active");
-    const registeredToday = patients.filter((p) => p.registeredOn === "25 Sep 2026").length;
+    const today = todayLabel();
+    const registeredToday = patients.filter((p) => p.registeredOn === today).length;
     const walkIns = patients.filter((p) => p.category === "Walk-in" && p.status === "Active").length;
     const pendingNhis = patients.filter((p) => p.nhisStatus === "Pending").length;
     const verifiedNhis = patients.filter((p) => p.nhisStatus === "Verified").length;

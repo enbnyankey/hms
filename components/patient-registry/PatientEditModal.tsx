@@ -52,7 +52,7 @@ export default function PatientEditModal({
   patient: PatientRecord | null;
   open: boolean;
   onClose: () => void;
-  onSubmit: (id: string, values: PatientEditValues) => void;
+  onSubmit: (id: string, values: PatientEditValues) => void | Promise<void>;
 }) {
   const [values, setValues] = useState<PatientEditValues>(() =>
     patient ? toEditValues(patient) : emptyEditValues()
@@ -87,14 +87,15 @@ export default function PatientEditModal({
     onClose();
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setTouched(true);
     if (!isValid) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onSubmit(currentPatient.id, values);
+    try {
+      await onSubmit(currentPatient.id, values);
+    } finally {
       setSubmitting(false);
-    }, 400);
+    }
   }
 
   return (

@@ -134,7 +134,7 @@ export default function PatientIndexTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-xs">
+        <table className="w-full min-w-[760px] text-left text-xs">
           <thead>
             <tr className="text-[10px] uppercase tracking-wide text-slate-400">
               <th className="px-5 pb-2 pt-3 font-semibold">MRN &amp; Patient</th>

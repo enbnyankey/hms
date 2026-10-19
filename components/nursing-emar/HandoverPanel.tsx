@@ -5,7 +5,6 @@ import { MessageSquareText, Plus } from "lucide-react";
 import Card from "@/components/Card";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import { actionToast } from "@/lib/actions";
 import type { HandoverNote } from "@/lib/nursing-emar-data";
 
 export default function HandoverPanel({
@@ -13,7 +12,8 @@ export default function HandoverPanel({
   onAddNote,
 }: {
   notes: HandoverNote[];
-  onAddNote: (note: HandoverNote) => void;
+  /** Resolve true when saved (closes the dialog). */
+  onAddNote: (text: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -27,23 +27,19 @@ export default function HandoverPanel({
     setOpen(false);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!isValid) return;
     setSubmitting(true);
-    setTimeout(() => {
-      const note: HandoverNote = {
-        id: `h-${Date.now()}`,
-        nurse: "Nurse Abena Owusu",
-        time: "25 Sep, 09:15",
-        note: text.trim(),
-      };
-      onAddNote(note);
-      actionToast("Handover note added", "Visible to the incoming shift.", "success");
+    try {
+      if (await onAddNote(text.trim())) {
+        setText("");
+        setOpen(false);
+      }
+    } finally {
       setSubmitting(false);
-      setText("");
-      setOpen(false);
-    }, 400);
+    }
   }
+
 
   return (
     <Card

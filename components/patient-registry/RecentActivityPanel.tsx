@@ -21,7 +21,7 @@ export default function RecentActivityPanel({ entries }: { entries: ActivityEntr
     <div className="rounded-xl border border-surface-border bg-white shadow-card">
       <div className="border-b border-surface-border px-5 py-4">
         <h2 className="text-sm font-bold text-slate-900">Front Desk Activity</h2>
-        <p className="text-[11px] text-slate-400">Live log of registry actions this session</p>
+        <p className="text-[11px] text-slate-400">Recent registry actions by all staff</p>
       </div>
       <div className="max-h-[420px] overflow-y-auto p-4">
         {entries.length === 0 ? (

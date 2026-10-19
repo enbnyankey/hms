@@ -3,6 +3,10 @@
 import { UserPlus, CalendarDays, MapPin } from "lucide-react";
 import { registryHeader } from "@/lib/patient-registry-data";
 
+function headerDate(): string {
+  return new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function RegistryHeader({ onNewRegistration }: { onNewRegistration: () => void }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -24,7 +28,7 @@ export default function RegistryHeader({ onNewRegistration }: { onNewRegistratio
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 rounded-md border border-surface-border bg-white px-3 py-2 text-xs font-medium text-slate-600">
           <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
-          {registryHeader.dateLabel}
+          {headerDate()}
         </span>
         <span className="flex items-center gap-1.5 rounded-md border border-surface-border bg-white px-3 py-2 text-xs font-medium text-slate-600">
           <MapPin className="h-3.5 w-3.5 text-slate-400" />

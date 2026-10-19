@@ -13,7 +13,7 @@ export default function AddPatientModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (values: PatientFormValues) => void;
+  onSubmit: (values: PatientFormValues) => void | Promise<void>;
 }) {
   const [values, setValues] = useState<PatientFormValues>(emptyPatientForm);
   const [touched, setTouched] = useState(false);
@@ -46,14 +46,15 @@ export default function AddPatientModal({
     onClose();
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setTouched(true);
     if (!isValid) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onSubmit(values);
+    try {
+      await onSubmit(values);
+    } finally {
       setSubmitting(false);
-    }, 400);
+    }
   }
 
   return (

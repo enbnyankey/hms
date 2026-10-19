@@ -1,28 +1,33 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { wardFilters } from "@/lib/ward-data";
+
+export type WardFilterOption = { id: string; label: string; count: number };
+
+export type BedStatusFilter = "all" | "occupied" | "discharge-ready" | "available" | "reserved" | "cleaning" | "maintenance";
 
 export default function WardFilterBar({
+  wardFilters,
   activeFilter,
   onFilterChange,
   search,
   onSearchChange,
   isolationOnly,
   onIsolationOnlyChange,
-  criticalOnly,
-  onCriticalOnlyChange,
+  statusFilter,
+  onStatusFilterChange,
   highlightUnderstaffed,
   onHighlightUnderstaffedChange,
 }: {
+  wardFilters: WardFilterOption[];
   activeFilter: string;
   onFilterChange: (id: string) => void;
   search: string;
   onSearchChange: (value: string) => void;
   isolationOnly: boolean;
   onIsolationOnlyChange: (value: boolean) => void;
-  criticalOnly: boolean;
-  onCriticalOnlyChange: (value: boolean) => void;
+  statusFilter: BedStatusFilter;
+  onStatusFilterChange: (value: BedStatusFilter) => void;
   highlightUnderstaffed: boolean;
   onHighlightUnderstaffedChange: (value: boolean) => void;
 }) {
@@ -66,12 +71,17 @@ export default function WardFilterBar({
       </div>
 
       <select
-        value={criticalOnly ? "critical" : "all"}
-        onChange={(e) => onCriticalOnlyChange(e.target.value === "critical")}
+        value={statusFilter}
+        onChange={(e) => onStatusFilterChange(e.target.value as BedStatusFilter)}
         className="ml-auto rounded-md border border-surface-border px-2.5 py-1.5 text-[11px] font-medium text-slate-500 outline-none focus:border-brand-teal"
       >
-        <option value="all">All Acuity Levels</option>
-        <option value="critical">Critical Only</option>
+        <option value="all">All Bed Statuses</option>
+        <option value="occupied">Occupied</option>
+        <option value="discharge-ready">Discharge Ready</option>
+        <option value="available">Available</option>
+        <option value="reserved">Reserved</option>
+        <option value="cleaning">Cleaning</option>
+        <option value="maintenance">Out of Service</option>
       </select>
 
       <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
@@ -94,13 +104,13 @@ export default function WardFilterBar({
         Staffing Ratio 1:5 Overall
       </label>
 
-      {(search || isolationOnly || criticalOnly || activeFilter !== "all") && (
+      {(search || isolationOnly || statusFilter !== "all" || activeFilter !== "all") && (
         <button
           type="button"
           onClick={() => {
             onSearchChange("");
             onIsolationOnlyChange(false);
-            onCriticalOnlyChange(false);
+            onStatusFilterChange("all");
             onFilterChange("all");
           }}
           className="flex items-center gap-1 rounded-md border border-surface-border px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"

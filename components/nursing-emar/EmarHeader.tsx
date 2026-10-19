@@ -2,15 +2,32 @@
 
 import { useState } from "react";
 import { ClipboardList, CalendarClock, UserRound, HeartPulse } from "lucide-react";
-import { nursingHeader } from "@/lib/nursing-emar-data";
-import RecordVitalsModal from "./RecordVitalsModal";
+import RecordVitalsModal, { type RosterOption, type VitalsValues } from "./RecordVitalsModal";
+
+export type WardOption = { id: string; name: string; chargeNurse: string | null };
+
+function shiftLabel(): string {
+  const h = new Date().getHours();
+  if (h >= 7 && h < 19) return "Day Shift · 07:00 – 19:00";
+  return "Night Shift · 19:00 – 07:00";
+}
 
 export default function EmarHeader({
+  wards,
+  wardId,
+  onWardChange,
+  roster,
   onSaveVitals,
 }: {
-  onSaveVitals: (patientLabel: string, values: { bp: string; pulse: string; temp: string; spo2: string; resp: string }) => void;
+  wards: WardOption[];
+  wardId: string;
+  onWardChange: (id: string) => void;
+  roster: RosterOption[];
+  onSaveVitals: (admissionId: string, values: VitalsValues) => Promise<boolean>;
 }) {
-  const [vitalsOpen, setVitalsOpen] = useState(false);
+  const [vitalsKey, setVitalsKey] = useState<number | null>(null);
+  const ward = wards.find((w) => w.id === wardId);
+  const today = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -20,10 +37,21 @@ export default function EmarHeader({
         </span>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            {nursingHeader.facility}
+            Korle-Bu Central Hospital
           </p>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Nursing &amp; eMAR</h1>
-          <p className="text-xs text-slate-500">{nursingHeader.ward}</p>
+          <select
+            value={wardId}
+            onChange={(e) => onWardChange(e.target.value)}
+            aria-label="Ward"
+            className="mt-0.5 rounded-md border border-surface-border bg-white px-2 py-1 text-xs font-medium text-slate-600 outline-none focus:border-brand-teal"
+          >
+            {wards.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -31,19 +59,19 @@ export default function EmarHeader({
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
             <CalendarClock className="h-3.5 w-3.5" />
-            {nursingHeader.shift}
+            {shiftLabel()}
           </span>
           <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-            {nursingHeader.date}
+            {today}
           </span>
           <span className="flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-[11px] font-semibold text-brand-teal">
             <UserRound className="h-3.5 w-3.5" />
-            {nursingHeader.nurseInCharge}
+            Charge Nurse: {ward?.chargeNurse ?? "—"}
           </span>
         </div>
         <button
           type="button"
-          onClick={() => setVitalsOpen(true)}
+          onClick={() => setVitalsKey(Date.now())}
           className="flex items-center gap-1.5 rounded-md bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-700"
         >
           <HeartPulse className="h-3.5 w-3.5" />
@@ -51,14 +79,15 @@ export default function EmarHeader({
         </button>
       </div>
 
-      <RecordVitalsModal
-        open={vitalsOpen}
-        onClose={() => setVitalsOpen(false)}
-        onSave={(patientLabel, values) => {
-          onSaveVitals(patientLabel, values);
-          setVitalsOpen(false);
-        }}
-      />
+      {vitalsKey !== null && (
+        <RecordVitalsModal
+          key={vitalsKey}
+          open
+          roster={roster}
+          onClose={() => setVitalsKey(null)}
+          onSave={onSaveVitals}
+        />
+      )}
     </div>
   );
 }

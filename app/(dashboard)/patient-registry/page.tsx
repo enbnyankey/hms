@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import SystemLoader from "@/components/ui/SystemLoader";
 import RegistryHeader from "@/components/patient-registry/RegistryHeader";
 import RegistryKpis from "@/components/patient-registry/RegistryKpis";
 import PatientIndexTable from "@/components/patient-registry/PatientIndexTable";
@@ -11,17 +12,30 @@ import PatientEditModal, { type PatientEditValues } from "@/components/patient-r
 import AddPatientModal from "@/components/patient-registry/AddPatientModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { actionToast } from "@/lib/actions";
+import { ApiError, fetchActivity, formatActivityTime, type AuditEvent } from "@/lib/api";
 import {
-  patientRecords as initialPatientRecords,
-  nextMrn,
-  type PatientRecord,
-  type PatientFormValues,
-} from "@/lib/patient-registry-data";
+  createPatient,
+  deactivatePatient as deactivatePatientApi,
+  fetchPatients,
+  updatePatient,
+  verifyNhis,
+} from "@/lib/patients-api";
+import type { PatientRecord, PatientFormValues } from "@/lib/patient-registry-data";
 
-let activityCounter = 0;
-function makeActivityId() {
-  activityCounter += 1;
-  return `act-${activityCounter}`;
+const ACTIVITY_MODULE = "patient-registry";
+
+function toActivityEntry(e: AuditEvent): ActivityEntry {
+  const type: ActivityEntry["type"] =
+    e.action === "register" || e.action === "verify" || e.action === "edit" || e.action === "deactivate"
+      ? e.action
+      : e.action === "reactivate"
+        ? "verify"
+        : "edit";
+  return { id: e.id, type, message: e.summary, timestamp: formatActivityTime(e.occurredAt) };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof ApiError || err instanceof Error ? err.message : "Something went wrong.";
 }
 
 export default function PatientRegistryPage() {
@@ -35,11 +49,10 @@ export default function PatientRegistryPage() {
 function PatientRegistryPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [patients, setPatients] = useState<PatientRecord[]>(initialPatientRecords);
-  const [activity, setActivity] = useState<ActivityEntry[]>([
-    { id: makeActivityId(), type: "register", message: "Samuel Tetteh registered as a walk-in patient.", timestamp: "Today · 08:12 AM" },
-    { id: makeActivityId(), type: "register", message: "Adwoa Serwaa registered, NHIS pending verification.", timestamp: "Today · 08:40 AM" },
-  ]);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [viewPatientId, setViewPatientId] = useState<string | null>(null);
@@ -55,6 +68,52 @@ function PatientRegistryPageInner() {
     [patients, deactivatePatientId]
   );
 
+  const refreshActivity = useCallback(async () => {
+    try {
+      setActivity((await fetchActivity(ACTIVITY_MODULE, 20)).map(toActivityEntry));
+    } catch {
+      // The activity panel is secondary; leave the last good list on screen.
+    }
+  }, []);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const list = await fetchPatients();
+      setPatients(list);
+      setLoadError(null);
+      await refreshActivity();
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshActivity]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchPatients(), fetchActivity(ACTIVITY_MODULE, 20).catch(() => [] as AuditEvent[])])
+      .then(([list, events]) => {
+        if (cancelled) return;
+        setPatients(list);
+        setActivity(events.map(toActivityEntry));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(errorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function retryLoad() {
+    setLoading(true);
+    setLoadError(null);
+    fetchAll();
+  }
+
   useEffect(() => {
     if (searchParams.get("openAdd") === "1") {
       setAddOpen(true);
@@ -62,66 +121,92 @@ function PatientRegistryPageInner() {
     }
   }, [searchParams, router]);
 
-  function pushActivity(type: ActivityEntry["type"], message: string) {
-    setActivity((prev) => [{ id: makeActivityId(), type, message, timestamp: "Just now" }, ...prev].slice(0, 20));
+  function replacePatient(updated: PatientRecord) {
+    setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
-  function handleAddPatient(values: PatientFormValues) {
-    const mrn = nextMrn();
-    const newPatient: PatientRecord = {
-      id: `p-${mrn}`,
-      mrn,
-      name: values.name.trim(),
-      age: Number(values.age) || 0,
-      sex: (values.sex || "Male") as "Male" | "Female",
-      phone: values.phone.trim(),
-      address: values.address.trim(),
-      dob: values.dob.trim() || "Not recorded",
-      nextOfKinName: values.nextOfKinName.trim(),
-      nextOfKinPhone: values.nextOfKinPhone.trim(),
-      nhisNumber: values.nhisNumber.trim(),
-      nhisStatus: values.nhisNumber.trim() ? (values.walkIn ? "Pending" : "Verified") : values.walkIn ? "Pending" : "Not Enrolled",
-      bloodGroup: values.bloodGroup || "Unknown",
-      allergies: values.allergies.trim() || "None recorded",
-      category: values.walkIn ? "Walk-in" : "Outpatient",
-      lastVisit: "25 Sep 2026",
-      registeredBy: "Nadine Yankey",
-      registeredOn: "25 Sep 2026",
-      status: "Active",
-      duplicateFlag: false,
-    };
-    setPatients((prev) => [newPatient, ...prev]);
-    pushActivity("register", `${newPatient.name} registered with MRN ${mrn}.`);
-    actionToast("Patient registered", `${newPatient.name} added to the Master Patient Index (${mrn}).`, "success");
-    setAddOpen(false);
+  async function handleAddPatient(values: PatientFormValues) {
+    try {
+      const created = await createPatient(values);
+      setPatients((prev) => [created, ...prev]);
+      actionToast(
+        "Patient registered",
+        `${created.name} added to the Master Patient Index (${created.mrn}).` +
+          (created.duplicateFlag ? " Flagged as a possible duplicate." : ""),
+        created.duplicateFlag ? "warning" : "success"
+      );
+      setAddOpen(false);
+      refreshActivity();
+    } catch (err) {
+      actionToast("Couldn't register patient", errorMessage(err), "error");
+    }
   }
 
-  function handleEditSubmit(id: string, values: PatientEditValues) {
-    setPatients((prev) => prev.map((p) => (p.id === id ? { ...p, ...values } : p)));
-    const patient = patients.find((p) => p.id === id);
-    pushActivity("edit", `${values.name} demographics updated.`);
-    actionToast("Changes saved", patient ? `${patient.mrn} demographics were updated.` : undefined, "success");
-    setEditPatientId(null);
+  async function handleEditSubmit(id: string, values: PatientEditValues) {
+    try {
+      const updated = await updatePatient(id, values);
+      replacePatient(updated);
+      actionToast("Changes saved", `${updated.mrn} demographics were updated.`, "success");
+      setEditPatientId(null);
+      refreshActivity();
+    } catch (err) {
+      actionToast("Couldn't save changes", errorMessage(err), "error");
+    }
   }
 
-  function handleVerifyConfirm() {
+  async function handleVerifyConfirm() {
     if (!verifyPatient) return;
-    setPatients((prev) =>
-      prev.map((p) => (p.id === verifyPatient.id ? { ...p, nhisStatus: "Verified" } : p))
-    );
-    pushActivity("verify", `${verifyPatient.name}'s NHIS coverage verified.`);
-    actionToast("NHIS verified", `${verifyPatient.name} (${verifyPatient.mrn}) now shows active NHIS coverage.`, "success");
-    setVerifyPatientId(null);
+    try {
+      const updated = await verifyNhis(verifyPatient.id);
+      replacePatient(updated);
+      actionToast("NHIS verified", `${updated.name} (${updated.mrn}) now shows active NHIS coverage.`, "success");
+      setVerifyPatientId(null);
+      refreshActivity();
+    } catch (err) {
+      actionToast("Couldn't verify NHIS", errorMessage(err), "error");
+    }
   }
 
-  function handleDeactivateConfirm() {
+  async function handleDeactivateConfirm() {
     if (!deactivatePatient) return;
-    setPatients((prev) =>
-      prev.map((p) => (p.id === deactivatePatient.id ? { ...p, status: "Inactive" } : p))
+    try {
+      const updated = await deactivatePatientApi(deactivatePatient.id);
+      replacePatient(updated);
+      actionToast("Record deactivated", `${updated.name} (${updated.mrn}) removed from the active index.`, "warning");
+      setDeactivatePatientId(null);
+      refreshActivity();
+    } catch (err) {
+      actionToast("Couldn't deactivate record", errorMessage(err), "error");
+    }
+  }
+
+  if (loading && patients.length === 0) {
+    return (
+      <div>
+        <RegistryHeader onNewRegistration={() => setAddOpen(true)} />
+        <div className="mt-10">
+          <SystemLoader title="Loading patients" subtitle="Fetching the master patient index…" />
+        </div>
+      </div>
     );
-    pushActivity("deactivate", `${deactivatePatient.name}'s record was deactivated.`);
-    actionToast("Record deactivated", `${deactivatePatient.name} (${deactivatePatient.mrn}) removed from the active index.`, "warning");
-    setDeactivatePatientId(null);
+  }
+
+  if (loadError) {
+    return (
+      <div>
+        <RegistryHeader onNewRegistration={() => setAddOpen(true)} />
+        <div className="mt-6 rounded-xl border border-red-200 bg-status-red-bg p-5 text-sm text-status-red">
+          <p className="font-semibold">Couldn&apos;t load the patient registry.</p>
+          <p className="mt-1">{loadError}</p>
+          <button
+            onClick={retryLoad}
+            className="mt-3 rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-status-red shadow-sm hover:bg-red-50"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -129,7 +214,7 @@ function PatientRegistryPageInner() {
       <RegistryHeader onNewRegistration={() => setAddOpen(true)} />
       <RegistryKpis patients={patients} />
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <PatientIndexTable
           patients={patients}
           onView={setViewPatientId}

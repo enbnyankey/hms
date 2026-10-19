@@ -18,7 +18,7 @@ export default function AdministerDoseModal({
 }: {
   dose: MarDose | null;
   onClose: () => void;
-  onConfirm: (doseId: string, values: { givenAt: string; route: string; witnessedBy?: string }) => void;
+  onConfirm: (doseId: string, values: { givenAt: string; route: string; witnessedBy?: string }) => void | Promise<void>;
 }) {
   const [givenAt, setGivenAt] = useState("");
   const [route, setRoute] = useState("");
@@ -37,18 +37,20 @@ export default function AdministerDoseModal({
   const requiresWitness = !!dose?.controlled;
   const invalid = !givenAt.trim() || !route.trim() || (requiresWitness && !witnessedBy.trim());
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!dose || invalid) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onConfirm(dose.id, {
+    try {
+      await onConfirm(dose.id, {
         givenAt: givenAt.trim(),
         route: route.trim(),
         witnessedBy: requiresWitness ? witnessedBy.trim() : undefined,
       });
+    } finally {
       setSubmitting(false);
-    }, 400);
+    }
   }
+
 
   return (
     <Modal

@@ -29,7 +29,7 @@ export default function ConfirmModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (reason?: string) => void;
+  onConfirm: (reason?: string) => void | Promise<void>;
   variant: ConfirmVariant;
   title: string;
   description: string;
@@ -44,14 +44,15 @@ export default function ConfirmModal({
   const cfg = variantConfig[variant];
   const disabled = requireReason && !reason.trim();
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (disabled) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onConfirm(requireReason ? reason.trim() : undefined);
-      setSubmitting(false);
+    try {
+      await onConfirm(requireReason ? reason.trim() : undefined);
       setReason("");
-    }, 400);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleClose() {

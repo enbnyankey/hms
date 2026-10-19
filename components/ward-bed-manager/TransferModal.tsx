@@ -4,9 +4,8 @@ import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import type { WardKey } from "@/lib/ward-data";
-
-export type TransferTarget = { ward: WardKey; bedId: string; label: string };
+/** A bed a patient can be moved/admitted into. ward is the ward code (e.g. "A"). */
+export type TransferTarget = { ward: string; bedId: string; label: string };
 
 export default function TransferModal({
   open,
@@ -18,7 +17,7 @@ export default function TransferModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (target: TransferTarget) => void;
+  onConfirm: (target: TransferTarget) => void | Promise<void>;
   sourceLabel: string;
   patientName?: string;
   availableTargets: TransferTarget[];
@@ -32,16 +31,18 @@ export default function TransferModal({
     onClose();
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     const target = availableTargets.find((t) => `${t.ward}:${t.bedId}` === targetKey);
     if (!target) return;
     setSubmitting(true);
-    setTimeout(() => {
-      onConfirm(target);
-      setSubmitting(false);
+    try {
+      await onConfirm(target);
       setTargetKey("");
-    }, 400);
+    } finally {
+      setSubmitting(false);
+    }
   }
+
 
   return (
     <Modal

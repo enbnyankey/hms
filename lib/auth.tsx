@@ -62,6 +62,7 @@ export const ROUTE_ACCESS: Record<string, Role[]> = {
   "/billing-claims": ["admin", "billing_clerk"],
   "/reports-analytics": ["admin", "compliance"],
   "/audit-trail": ["admin", "compliance"],
+  "/hospital-profile": ["admin"],
 };
 
 // Where a role lands right after signing in — its first accessible page.
